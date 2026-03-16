@@ -18,6 +18,12 @@ export const userApi = {
     const response = await api.get(`/api/users/by-email?email=${encodeURIComponent(email)}`);
     return response.data;
   },
+
+  // Search users by name - GET /api/users/search?query={query}
+  searchUsersByName: async (query) => {
+    const response = await api.get(`/api/users/search?query=${encodeURIComponent(query)}`);
+    return response.data;
+  },
 };
 
 export default userApi;
