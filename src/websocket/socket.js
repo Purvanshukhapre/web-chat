@@ -7,6 +7,7 @@ class SocketService {
     this.stompClient = null;
     this.connected = false;
     this.userId = null;
+    this.typingSubscriptions = new Map(); // Store typing subscriptions by chat
   }
 
   connect = (userId, onMessageReceived) => {
@@ -32,6 +33,15 @@ class SocketService {
               const msg = JSON.parse(message.body);
               console.log('📬 Received message:', msg);
               onMessageReceived(msg);
+            });
+            
+            // Subscribe to typing indicators
+            this.stompClient.subscribe('/user/queue/typing', (message) => {
+              const typingData = JSON.parse(message.body);
+              console.log('⌨️ Typing indicator:', typingData);
+              if (onMessageReceived) {
+                onMessageReceived({ type: 'TYPING', data: typingData });
+              }
             });
             
             // Subscribe to status updates
@@ -77,6 +87,28 @@ class SocketService {
     } else {
       console.warn('Cannot send message - WebSocket not connected');
       return false; // Failed to send
+    }
+  };
+
+  // Send typing indicator
+  sendTypingIndicator = (senderId, receiverId, isTyping) => {
+    if (this.stompClient && this.connected) {
+      const typingData = {
+        senderId,
+        receiverId,
+        isTyping,
+        timestamp: new Date().toISOString()
+      };
+      
+      this.stompClient.publish({
+        destination: '/app/chat.typing',
+        body: JSON.stringify(typingData),
+      });
+      console.log('⌨️ Sent typing indicator:', typingData);
+      return true;
+    } else {
+      console.warn('Cannot send typing indicator - WebSocket not connected');
+      return false;
     }
   };
 

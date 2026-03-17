@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
+import socket from '../websocket/socket';
 
-const ChatWindow = ({ selectedUser, messages, onSendMessage, loading }) => {
+const ChatWindow = ({ selectedUser, messages, onSendMessage, loading, isOtherUserTyping }) => {
   const [messageText, setMessageText] = useState('');
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const lastSentTypingRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -27,11 +30,51 @@ const ChatWindow = ({ selectedUser, messages, onSendMessage, loading }) => {
     }
   }, []);
 
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setMessageText(value);
+    
+    // Send typing indicator when user starts typing
+    if (value.length > 0 && !lastSentTypingRef.current) {
+      const currentUserId = localStorage.getItem('userId');
+      if (currentUserId && selectedUser?.id) {
+        socket.sendTypingIndicator(currentUserId, selectedUser.id, true);
+        lastSentTypingRef.current = true;
+      }
+    }
+    
+    // Clear typing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Stop typing indicator after 2 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      const currentUserId = localStorage.getItem('userId');
+      if (currentUserId && selectedUser?.id) {
+        socket.sendTypingIndicator(currentUserId, selectedUser.id, false);
+        lastSentTypingRef.current = false;
+      }
+    }, 2000);
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (messageText.trim() && onSendMessage) {
       onSendMessage(messageText);
       setMessageText('');
+      
+      // Stop typing indicator when message is sent
+      const currentUserId = localStorage.getItem('userId');
+      if (currentUserId && selectedUser?.id) {
+        socket.sendTypingIndicator(currentUserId, selectedUser.id, false);
+        lastSentTypingRef.current = false;
+      }
+      
+      // Clear any pending timeouts
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
     }
   };
 
@@ -86,7 +129,12 @@ const ChatWindow = ({ selectedUser, messages, onSendMessage, loading }) => {
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-gray-900 truncate">{selectedUser.username || selectedUser.name}</h3>
             <p className="text-xs text-gray-500 font-medium">
-              {selectedUser.isOnline ? (
+              {isOtherUserTyping ? (
+                <span className="flex items-center text-blue-600">
+                  <span className="w-2 h-2 bg-blue-600 rounded-full mr-1.5 animate-pulse"></span>
+                  typing...
+                </span>
+              ) : selectedUser.isOnline ? (
                 <span className="flex items-center">
                   <span className="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span>
                   Online
@@ -130,6 +178,19 @@ const ChatWindow = ({ selectedUser, messages, onSendMessage, loading }) => {
                 />
               );
             })}
+            
+            {/* Typing indicator */}
+            {isOtherUserTyping && (
+              <div className="flex justify-start mb-3 animate-pulse">
+                <div className="bg-white border border-gray-100 px-4 py-3 rounded-2xl rounded-bl-md shadow-sm max-w-[200px]">
+                  <div className="flex space-x-1.5">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -143,7 +204,7 @@ const ChatWindow = ({ selectedUser, messages, onSendMessage, loading }) => {
             placeholder="Type a message..."
             className="flex-1 px-5 py-3 bg-gray-100 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all duration-200 text-gray-800 placeholder-gray-400"
             value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
+            onChange={handleInputChange}
           />
           <button
             type="submit"

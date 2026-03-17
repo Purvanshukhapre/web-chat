@@ -11,6 +11,7 @@ const Dashboard = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
   const { token } = useAuth();
 
   useEffect(() => {
@@ -36,6 +37,25 @@ const Dashboard = () => {
 
   const handleWebSocketMessage = (message) => {
     try {
+      // Handle typing indicator
+      if (message.type === 'TYPING') {
+        const typingData = message.data;
+        const currentUserId = localStorage.getItem('userId');
+        
+        if (selectedUser && typingData.senderId === selectedUser.id && typingData.receiverId === currentUserId) {
+          console.log('✅ Other user is typing:', typingData);
+          setIsOtherUserTyping(typingData.isTyping);
+          
+          // Clear typing indicator after 2 seconds
+          if (typingData.isTyping) {
+            setTimeout(() => {
+              setIsOtherUserTyping(false);
+            }, 2000);
+          }
+        }
+        return;
+      }
+      
       const receivedMessage = JSON.parse(message.body);
       
       console.log('📨 Raw WebSocket message:', message);
@@ -208,6 +228,7 @@ const Dashboard = () => {
         messages={messages}
         onSendMessage={handleSendMessage}
         loading={chatLoading}
+        isOtherUserTyping={isOtherUserTyping}
       />
     </div>
   );
