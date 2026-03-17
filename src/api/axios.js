@@ -36,6 +36,13 @@ api.interceptors.response.use(
       // Token expired or invalid
       localStorage.removeItem('token');
       window.location.href = '/login';
+    } else if (error.response?.status === 403) {
+      console.error('Access forbidden. Please check permissions or re-login.');
+      console.error('Request URL:', error.config?.url);
+      console.error('Request Method:', error.config?.method);
+      // Optionally force re-login on 403 as well
+      // localStorage.removeItem('token');
+      // window.location.href = '/login';
     }
     return Promise.reject(error);
   }

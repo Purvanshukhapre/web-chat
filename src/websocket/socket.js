@@ -73,8 +73,10 @@ class SocketService {
         body: JSON.stringify(message),
       });
       console.log('📤 Sent message to', destination);
+      return true; // Successfully sent
     } else {
       console.warn('Cannot send message - WebSocket not connected');
+      return false; // Failed to send
     }
   };
 

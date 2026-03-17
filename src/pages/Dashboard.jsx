@@ -38,6 +38,9 @@ const Dashboard = () => {
     try {
       const receivedMessage = JSON.parse(message.body);
       
+      console.log('📨 Raw WebSocket message:', message);
+      console.log('📨 Parsed message:', receivedMessage);
+      
       // Check if this is a user list update or new user notification
       if (receivedMessage.type === 'USER_JOINED' || receivedMessage.type === 'USER_LIST') {
         console.log('User list update received:', receivedMessage);
@@ -54,9 +57,42 @@ const Dashboard = () => {
             return prev;
           });
         }
+      } else if (receivedMessage.senderId && receivedMessage.receiverId && receivedMessage.content) {
+        // This is a chat message - verify it's for the current conversation
+        const currentUserId = localStorage.getItem('userId');
+        
+        // Only add message if it's part of the current conversation
+        if (
+          (receivedMessage.senderId === currentUserId || receivedMessage.receiverId === currentUserId) &&
+          selectedUser && (receivedMessage.senderId === selectedUser.id || receivedMessage.receiverId === selectedUser.id)
+        ) {
+          console.log('✅ Adding chat message to UI:', receivedMessage);
+          
+          setMessages(prev => {
+            // Check if this message already exists (avoid duplicates)
+            const exists = prev.find(msg => msg.id === receivedMessage.id);
+            if (exists) {
+              // Update existing message (e.g., status update)
+              console.log('🔄 Updating existing message');
+              return prev.map(msg => 
+                msg.id === receivedMessage.id ? { ...msg, ...receivedMessage } : msg
+              );
+            }
+            // Add new message and sort by timestamp
+            console.log('➕ Adding new message');
+            const updatedMessages = [...prev, receivedMessage];
+            // Sort to ensure correct order (oldest to newest)
+            return updatedMessages.sort((a, b) => {
+              const timeA = new Date(a.timestamp).getTime();
+              const timeB = new Date(b.timestamp).getTime();
+              return timeA - timeB;
+            });
+          });
+        } else {
+          console.log('⚠️ Message not for current conversation');
+        }
       } else {
-        // Regular chat message
-        setMessages(prev => [...prev, receivedMessage]);
+        console.log('⚠️ Unknown message type:', receivedMessage);
       }
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
@@ -85,7 +121,15 @@ const Dashboard = () => {
       
       if (response && response.data) {
         console.log('Chat history loaded:', response.data.length, 'messages');
-        setMessages(response.data);
+        
+        // Sort messages by timestamp (oldest first, newest last)
+        const sortedMessages = [...response.data].sort((a, b) => {
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeA - timeB; // Ascending order: oldest to newest
+        });
+        
+        setMessages(sortedMessages);
       } else {
         console.log('No chat history found - empty messages array');
         setMessages([]);
@@ -117,14 +161,37 @@ const Dashboard = () => {
         messageType: 'TEXT',
       };
 
-      // Send via WebSocket (recommended)
-      socket.send('/app/chat.send', messageData);
+      console.log('Sending message via WebSocket:', messageData);
       
-      // Also send via REST API as fallback
-      const sentMessage = await messageApi.sendMessage(messageData);
-      setMessages(prev => [...prev, sentMessage]);
+      // Optimistically add message to UI immediately
+      const optimisticMessage = {
+        ...messageData,
+        id: `temp-${Date.now()}`,
+        status: 'SENT',
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => {
+        const updatedMessages = [...prev, optimisticMessage];
+        // Sort to maintain correct order
+        return updatedMessages.sort((a, b) => {
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeA - timeB;
+        });
+      });
+      
+      // Send via WebSocket ONLY (as per API documentation)
+      const sent = socket.send('/app/chat.send', messageData);
+      
+      if (!sent) {
+        console.error('Failed to send message via WebSocket');
+        // Remove optimistic message on failure
+        setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+        alert('Unable to send message. Please check your connection.');
+      }
     } catch (error) {
       console.error('Error sending message:', error);
+      alert('Failed to send message. Please try again.');
     }
   };
 
